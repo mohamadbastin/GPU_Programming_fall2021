@@ -30,11 +30,11 @@ TARGETS = serial pthreads openmp
 all:	$(TARGETS)
 
 serial: serial.o common.o
-	$(CC) -o $@ $(LIBS) serial.o common.o
+	$(CC) $(CFLAGS) -o $@ $(LIBS) serial.o common.o
 pthreads: pthreads.o common.o
-	$(CC) -o $@ $(LIBS) -lpthread pthreads.o common.o
+	$(CC) $(CFLAGS) -o $@ $(LIBS) -lpthread pthreads.o common.o
 openmp: openmp.o common.o
-	$(CC) -o $@ $(LIBS) $(OPENMP) openmp.o common.o
+	$(CC) $(CFLAGS) -o $@ $(LIBS) $(OPENMP) openmp.o common.o
 
 
 openmp.o: openmp.cpp common.h

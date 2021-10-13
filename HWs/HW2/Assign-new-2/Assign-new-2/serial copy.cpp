@@ -21,53 +21,6 @@ int binNum(particle_t &p, int bpr)
   return (floor(p.x / cutoff) + bpr * floor(p.y / cutoff));
 }
 
-void clearBins(vector<particle_t *> *bins, int numbins)
-{
-  for (int m = 0; m < numbins; m++)
-    bins[m].clear();
-};
-
-void placeParticlesInBins(int n, vector<particle_t *> *bins, particle_t *particles, int bpr)
-{
-  for (int i = 0; i < n; i++)
-    bins[binNum(particles[i], bpr)].push_back(particles + i);
-}
-
-void computeForces(int n, vector<particle_t *> *bins, particle_t *particles, int bpr)
-{
-  for (int p = 0; p < n; p++)
-  {
-    particles[p].ax = particles[p].ay = 0;
-
-    // find current particle's bin, handle boundaries
-    int cbin = binNum(particles[p], bpr);
-    int lowi = -1, highi = 1, lowj = -1, highj = 1;
-    if (cbin < bpr)
-      lowj = 0;
-    if (cbin % bpr == 0)
-      lowi = 0;
-    if (cbin % bpr == (bpr - 1))
-      highi = 0;
-    if (cbin >= bpr * (bpr - 1))
-      highj = 0;
-
-    // apply nearby forces
-    for (int i = lowi; i <= highi; i++)
-      for (int j = lowj; j <= highj; j++)
-      {
-        int nbin = cbin + i + bpr * j;
-        for (int k = 0; k < bins[nbin].size(); k++)
-          apply_force(particles[p], *bins[nbin][k]);
-      }
-  }
-}
-
-void moveParticles(int n, particle_t *particles)
-{
-  for (int p = 0; p < n; p++)
-    move(particles[p]);
-}
-
 //
 //  benchmarking program
 //
@@ -82,7 +35,7 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  int n = read_int(argc, argv, "-n", 50000);
+  int n = read_int(argc, argv, "-n", 500);
 
   char *savename = read_string(argc, argv, "-o", NULL);
 
@@ -105,20 +58,47 @@ int main(int argc, char **argv)
   {
 
     // clear bins at each time step
-    clearBins(bins, numbins);
+    for (int m = 0; m < numbins; m++)
+      bins[m].clear();
 
     // place particles in bins
-    placeParticlesInBins(n, bins, particles, bpr);
+    for (int i = 0; i < n; i++)
+      bins[binNum(particles[i], bpr)].push_back(particles + i);
 
     //
     //  compute forces
     //
-    computeForces(n, bins, particles, bpr);
+    for (int p = 0; p < n; p++)
+    {
+      particles[p].ax = particles[p].ay = 0;
+
+      // find current particle's bin, handle boundaries
+      int cbin = binNum(particles[p], bpr);
+      int lowi = -1, highi = 1, lowj = -1, highj = 1;
+      if (cbin < bpr)
+        lowj = 0;
+      if (cbin % bpr == 0)
+        lowi = 0;
+      if (cbin % bpr == (bpr - 1))
+        highi = 0;
+      if (cbin >= bpr * (bpr - 1))
+        highj = 0;
+
+      // apply nearby forces
+      for (int i = lowi; i <= highi; i++)
+        for (int j = lowj; j <= highj; j++)
+        {
+          int nbin = cbin + i + bpr * j;
+          for (int k = 0; k < bins[nbin].size(); k++)
+            apply_force(particles[p], *bins[nbin][k]);
+        }
+    }
 
     //
     //  move particles
     //
-    moveParticles(n, particles);
+    for (int p = 0; p < n; p++)
+      move(particles[p]);
 
     //
     //  save if necessary

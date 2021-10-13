@@ -4,6 +4,7 @@
 #include <math.h>
 #include <vector>
 #include "common.h"
+#include <pthread.h>
 using namespace std;
 
 //
@@ -14,6 +15,7 @@ using namespace std;
 #define cutoff 0.01
 #define min_r (cutoff / 100)
 #define dt 0.0005
+#define max_threads 16
 
 // calculate particle's bin number
 int binNum(particle_t &p, int bpr)
@@ -21,11 +23,31 @@ int binNum(particle_t &p, int bpr)
   return (floor(p.x / cutoff) + bpr * floor(p.y / cutoff));
 }
 
+typedef struct
+{
+  int starting_p;
+  int ending_p;
+  particle_t *particles;
+  int n;
+  int bpr;
+  vector<particle_t *> *bins;
+} thread_args;
+
+
 void clearBins(vector<particle_t *> *bins, int numbins)
 {
   for (int m = 0; m < numbins; m++)
     bins[m].clear();
 };
+
+void *clearBinsParallel(void *argss)
+{
+  thread_args *temp_arg = ((thread_args *)argss);
+  for (int m = temp_arg->starting_p; m < temp_arg->ending_p; m++)
+    temp_arg->bins[m].clear();
+
+  pthread_exit(NULL);
+}
 
 void placeParticlesInBins(int n, vector<particle_t *> *bins, particle_t *particles, int bpr)
 {
@@ -68,6 +90,8 @@ void moveParticles(int n, particle_t *particles)
     move(particles[p]);
 }
 
+
+
 //
 //  benchmarking program
 //
@@ -82,9 +106,18 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  int n = read_int(argc, argv, "-n", 50);
-
+  int n = read_int(argc, argv, "-n", 5000);
+  int threads_num = read_int(argc, argv, "-t", 8);
+  if (threads_num > max_threads)
+  {
+    printf("no no no");
+    return 1;
+  }
   char *savename = read_string(argc, argv, "-o", NULL);
+
+  pthread_t threads[threads_num];
+  thread_args args[threads_num];
+  // thread_args args;
 
   FILE *fsave = savename ? fopen(savename, "w") : NULL;
   particle_t *particles = (particle_t *)malloc(n * sizeof(particle_t));
@@ -106,6 +139,25 @@ int main(int argc, char **argv)
 
     // clear bins at each time step
     clearBins(bins, numbins);
+
+
+    int partition_size = numbins / threads_num + 1;
+
+    for (int i = 0; i < threads_num; i++)
+    {
+      int s = i * partition_size;
+      if (s >= numbins)
+        continue;
+      args[i].starting_p = s;
+      args[i].ending_p = fmin((i + 1) * partition_size, numbins);
+      args[i].bins = bins;
+
+      int rc = pthread_create(&threads[i], NULL, clearBinsParallel, (void *)&args[i]);
+    }
+
+    for (int i=0; i< threads_num; i++){
+      int64_t status = pthread_join(threads[i], NULL);
+    }
 
     // place particles in bins
     placeParticlesInBins(n, bins, particles, bpr);
