@@ -33,7 +33,6 @@ typedef struct
   vector<particle_t *> *bins;
 } thread_args;
 
-
 void clearBins(vector<particle_t *> *bins, int numbins)
 {
   for (int m = 0; m < numbins; m++)
@@ -84,13 +83,54 @@ void computeForces(int n, vector<particle_t *> *bins, particle_t *particles, int
   }
 }
 
+void *computeForcesParallel(void *argss)
+{
+  thread_args *temp_arg = ((thread_args *)argss);
+
+  for (int p = temp_arg->starting_p; p < temp_arg->ending_p; p++)
+  {
+    temp_arg->particles[p].ax = temp_arg->particles[p].ay = 0;
+
+    // find current particle's bin, handle boundaries
+    int cbin = binNum(temp_arg->particles[p], temp_arg->bpr);
+    int lowi = -1, highi = 1, lowj = -1, highj = 1;
+    if (cbin < temp_arg->bpr)
+      lowj = 0;
+    if (cbin % temp_arg->bpr == 0)
+      lowi = 0;
+    if (cbin % temp_arg->bpr == (temp_arg->bpr - 1))
+      highi = 0;
+    if (cbin >= temp_arg->bpr * (temp_arg->bpr - 1))
+      highj = 0;
+
+    // apply nearby forces
+    for (int i = lowi; i <= highi; i++)
+      for (int j = lowj; j <= highj; j++)
+      {
+        int nbin = cbin + i + temp_arg->bpr * j;
+        for (int k = 0; k < temp_arg->bins[nbin].size(); k++)
+          apply_force(temp_arg->particles[p], *temp_arg->bins[nbin][k]);
+      }
+  }
+  pthread_exit(NULL);
+}
+
 void moveParticles(int n, particle_t *particles)
 {
+
   for (int p = 0; p < n; p++)
     move(particles[p]);
 }
 
+void *moveParticlesParallel(void *argss)
+{
+  thread_args *temp_arg = ((thread_args *)argss);
 
+  for (int p = temp_arg->starting_p; p < temp_arg->ending_p; p++)
+    move(temp_arg->particles[p]);
+
+  pthread_exit(NULL);
+}
 
 //
 //  benchmarking program
@@ -140,24 +180,23 @@ int main(int argc, char **argv)
     // clear bins at each time step
     clearBins(bins, numbins);
 
+    // int partition_size = numbins / threads_num + 1;
 
-    int partition_size = numbins / threads_num + 1;
+    // for (int i = 0; i < threads_num; i++)
+    // {
+    //   int s = i * partition_size;
+    //   if (s >= numbins)
+    //     continue;
+    //   args[i].starting_p = s;
+    //   args[i].ending_p = fmin((i + 1) * partition_size, numbins);
+    //   args[i].bins = bins;
 
-    for (int i = 0; i < threads_num; i++)
-    {
-      int s = i * partition_size;
-      if (s >= numbins)
-        continue;
-      args[i].starting_p = s;
-      args[i].ending_p = fmin((i + 1) * partition_size, numbins);
-      args[i].bins = bins;
+    //   int rc = pthread_create(&threads[i], NULL, clearBinsParallel, (void *)&args[i]);
+    // }
 
-      int rc = pthread_create(&threads[i], NULL, clearBinsParallel, (void *)&args[i]);
-    }
-
-    for (int i=0; i< threads_num; i++){
-      int64_t status = pthread_join(threads[i], NULL);
-    }
+    // for (int i=0; i< threads_num; i++){
+    //   int64_t status = pthread_join(threads[i], NULL);
+    // }
 
     // place particles in bins
     placeParticlesInBins(n, bins, particles, bpr);
@@ -167,10 +206,50 @@ int main(int argc, char **argv)
     //
     computeForces(n, bins, particles, bpr);
 
+    // int compute_partition_size = n / threads_num + 1;
+
+    // for (int i = 0; i < threads_num; i++)
+    // {
+    //   int s = i * compute_partition_size;
+    //   if (s >= n)
+    //     continue;
+    //   args[i].starting_p = s;
+    //   args[i].ending_p = fmin((i + 1) * compute_partition_size, n);
+    //   args[i].bins = bins;
+    //   args[i].particles = particles;
+    //   args[i].bpr = bpr;
+
+    //   int rc = pthread_create(&threads[i], NULL, computeForcesParallel, (void *)&args[i]);
+    // }
+
+    // for (int i=0; i< threads_num; i++){
+    //   int64_t status = pthread_join(threads[i], NULL);
+    // }
+
     //
     //  move particles
     //
-    moveParticles(n, particles);
+    // moveParticles(n, particles);
+
+    int partition_size = n / threads_num + 1;
+
+    for (int i = 0; i < threads_num; i++)
+    {
+      int s = i * partition_size;
+      if (s >= n)
+        continue;
+      args[i].starting_p = s;
+      args[i].ending_p = fmin((i + 1) * partition_size, n);
+      args[i].bins = bins;
+      args[i].particles = particles;
+
+      int rc = pthread_create(&threads[i], NULL, moveParticlesParallel, (void *)&args[i]);
+    }
+
+    for (int i = 0; i < threads_num; i++)
+    {
+      int64_t status = pthread_join(threads[i], NULL);
+    }
 
     //
     //  save if necessary
